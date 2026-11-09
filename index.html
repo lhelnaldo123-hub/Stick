@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0b141a">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>Sticker Hub</title>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0 auto;max-width:560px;min-height:100vh;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:#0b141a;color:#e9edef}
+button{font:inherit;border:0;border-radius:10px;padding:10px 14px;font-weight:700;background:#25d366;color:#04210f}
+button.g{background:#2a3942;color:#e9edef}
+button:focus-visible,input:focus-visible{outline:2px solid #fff;outline-offset:2px}
+
+/* Loading page */
+#splash{position:fixed;inset:0;z-index:50;background:#0b141a;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;transition:opacity .5s}
+#splash.out{opacity:0;pointer-events:none}
+.logo{font-size:84px;animation:bob 1s ease-in-out infinite}
+@keyframes bob{50%{transform:translateY(-14px) rotate(-6deg)}}
+#splash h1{margin:0;font-size:28px;font-weight:800}
+#splash p{margin:0;opacity:.7;font-size:14px}
+.bar{width:180px;height:6px;border-radius:6px;background:#2a3942;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:#25d366;border-radius:6px;animation:fill 1.8s ease-out forwards}
+@keyframes fill{to{width:100%}}
+@media (prefers-reduced-motion:reduce){.logo{animation:none}}
+
+/* App */
+header{position:sticky;top:0;z-index:5;background:#0b141a;padding:12px 12px 6px}
+.top{display:flex;gap:8px}
+#inst{border-radius:24px;white-space:nowrap}
+#q{flex:1;min-width:0;padding:12px 14px;border:0;border-radius:24px;background:#202c33;color:#fff;font-size:16px}
+.tabs{display:flex;gap:6px;margin-top:8px}
+.tabs button{flex:1}
+.chips{display:flex;gap:6px;overflow-x:auto;padding:8px 0 4px;scrollbar-width:none}
+.chips button{white-space:nowrap;padding:7px 12px;font-size:13px;background:#202c33;color:#e9edef;border-radius:18px}
+.chips button.on{background:#25d366;color:#04210f}
+#grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:8px 12px}
+#grid button{padding:4px;background:#1f2c34;border-radius:12px;aspect-ratio:1;display:flex;align-items:center;justify-content:center}
+#grid img{max-width:100%;max-height:100%;object-fit:contain}
+#st{text-align:center;opacity:.75;font-size:14px;padding:10px}
+#more{display:block;margin:8px auto 14px}
+footer{text-align:center;font-size:12px;opacity:.55;padding:6px 0 20px}
+
+/* Preview sheet */
+#sheet{position:fixed;inset:0;z-index:20;background:rgba(0,0,0,.6);display:none;align-items:flex-end}
+#sheet.on{display:flex}
+.panel{width:100%;max-width:560px;margin:auto auto 0;background:#111b21;border-radius:20px 20px 0 0;padding:16px;text-align:center}
+.panel img{width:220px;height:220px;object-fit:contain}
+.panel .row{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin-top:10px}
+#msg{min-height:18px;font-size:13px;opacity:.85;margin:8px 0 0}
+.setup{padding:20px;line-height:1.5}
+.setup code{background:#202c33;padding:2px 6px;border-radius:6px}
+</style>
+</head>
+<body>
+
+<div id="splash">
+  <div class="logo">😎</div>
+  <h1>Sticker Hub</h1>
+  <p>Loading stickers…</p>
+  <div class="bar"><i></i></div>
+</div>
+
+<header>
+  <div class="top"><input id="q" type="search" placeholder="Search stickers" enterkeyhint="search" autocomplete="off"><button id="inst" hidden>Install</button></div>
+  <div class="chips" id="chips"></div>
+  <div class="tabs"><button id="tDisc">Discover</button><button id="tFav" class="g">Favourites</button></div>
+</header>
+
+<main>
+  <div id="grid"></div>
+  <p id="st"></p>
+  <button id="more" class="g" hidden>Load more</button>
+</main>
+<footer>Powered by GIPHY</footer>
+
+<div id="sheet">
+  <div class="panel">
+    <img id="big" alt="Sticker preview">
+    <div class="row">
+      <button id="bShare">Send on WhatsApp</button>
+      <button id="bFav" class="g">Add to favourites</button>
+      <button id="bDl" class="g">Save to gallery</button>
+      <button id="bX" class="g">Close</button>
+    </div>
+    <p id="msg"></p>
+  </div>
+</div>
+
+<script>
+/* 1. Get a free key at https://developers.giphy.com (Create an App, choose API) and paste it here */
+const KEY='6iVcKr7J7CB6xOBRrlQJXgJNdGtwFXL5';
+
+const API='https://api.giphy.com/v1/stickers/';
+const CATS=['Trending','Funny','Love','Happy','Sad','Thank you','Hello','Birthday','Angry','Cat','Dance','Congrats'];
+const $=id=>document.getElementById(id);
+let q='',off=0,view='disc',shown=[],cur=null,timer;
+
+/* Chips */
+$('chips').innerHTML=CATS.map((c,i)=>`<button class="${i?'':'on'}" data-c="${c}">${c}</button>`).join('');
+$('chips').onclick=e=>{
+  const b=e.target.closest('button');if(!b)return;
+  document.querySelectorAll('#chips button').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on');
+  $('q').value='';
+  q=b.dataset.c==='Trending'?'':b.dataset.c;
+  setView('disc');load(true);
+};
+$('q').oninput=e=>{
+  clearTimeout(timer);
+  timer=setTimeout(()=>{
+    q=e.target.value.trim();
+    document.querySelectorAll('#chips button').forEach(x=>x.classList.remove('on'));
+    setView('disc');load(true);
+  },450);
+};
+
+/* Tabs */
+function setView(v){
+  view=v;
+  $('tDisc').className=v==='disc'?'':'g';
+  $('tFav').className=v==='fav'?'':'g';
+  if(v==='fav')showFavs();
+}
+$('tDisc').onclick=()=>{setView('disc');load(true);};
+$('tFav').onclick=()=>setView('fav');
+
+/* Data */
+const favs=()=>{try{return JSON.parse(localStorage.getItem('favs')||'[]');}catch(e){return[];}};
+const saveFavs=a=>{try{localStorage.setItem('favs',JSON.stringify(a));}catch(e){}};
+const st=t=>$('st').textContent=t;
+
+function map(d){
+  const im=d.images;
+  return{id:d.id,
+    thumb:(im.fixed_width&&(im.fixed_width.webp||im.fixed_width.url))||im.original.url,
+    full:(im.original&&(im.original.webp||im.original.url))||im.fixed_width.url,
+    gif:(im.original&&im.original.url)||im.fixed_width.url};
+}
+
+async function load(reset){
+  if(KEY.startsWith('PASTE')){
+    $('grid').innerHTML='';
+    $('st').innerHTML='<div class="setup">Add your free GIPHY key to the top of the code:<br><code>const KEY=\'your-key\'</code></div>';
+    $('more').hidden=true;return;
+  }
+  if(reset){off=0;shown=[];$('grid').innerHTML='';}
+  st('Loading…');$('more').hidden=true;
+  const url=q
+    ?`${API}search?api_key=${KEY}&q=${encodeURIComponent(q)}&limit=24&offset=${off}&rating=g`
+    :`${API}trending?api_key=${KEY}&limit=24&offset=${off}&rating=g`;
+  try{
+    const r=await fetch(url);
+    if(!r.ok)throw new Error(r.status);
+    const j=await r.json(),list=j.data.map(map);
+    if(view!=='disc')return;
+    add(list);off+=list.length;
+    st(shown.length?'':'No stickers found. Try another word.');
+    $('more').hidden=list.length<24;
+  }catch(e){
+    st('Could not load stickers. Check your internet or your GIPHY key.');
+  }
+}
+$('more').onclick=()=>load(false);
+
+function add(list){
+  const start=shown.length;shown=shown.concat(list);
+  $('grid').insertAdjacentHTML('beforeend',list.map((s,i)=>`<button data-i="${start+i}" aria-label="Open sticker"><img src="${s.thumb}" loading="lazy" alt=""></button>`).join(''));
+}
+function showFavs(){
+  shown=[];$('grid').innerHTML='';$('more').hidden=true;
+  add(favs());
+  st(shown.length?'':'No favourites yet. Open a sticker and tap Add to favourites.');
+}
+$('grid').onclick=e=>{
+  const b=e.target.closest('button');if(!b)return;
+  cur=shown[+b.dataset.i];openSheet();
+};
+
+/* Preview sheet */
+function isFav(){return favs().some(f=>f.id===cur.id);}
+function openSheet(){
+  $('big').src=cur.full;$('msg').textContent='';
+  $('bFav').textContent=isFav()?'Remove favourite':'Add to favourites';
+  $('sheet').classList.add('on');
+}
+const close=()=>$('sheet').classList.remove('on');
+$('bX').onclick=close;
+$('sheet').onclick=e=>{if(e.target.id==='sheet')close();};
+$('bFav').onclick=()=>{
+  let a=favs();
+  a=isFav()?a.filter(f=>f.id!==cur.id):[cur].concat(a);
+  saveFavs(a);
+  if(view==='fav'){showFavs();close();}else openSheet();
+};
+
+/* Share and download */
+async function getFile(gif){
+  const r=await fetch(gif&&cur.gif?cur.gif:cur.full),b=await r.blob();
+  return new File([b],'sticker.'+(b.type.includes('webp')?'webp':'gif'),{type:b.type});
+}
+function save(f){
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(f);a.download=f.name;a.click();
+}
+$('bShare').onclick=async()=>{
+  $('msg').textContent='Getting sticker ready…';
+  try{
+    const f=await getFile();
+    if(navigator.canShare&&navigator.canShare({files:[f]})){await navigator.share({files:[f]});$('msg').textContent='';}
+    else{save(f);$('msg').textContent='Sharing is not supported here, so it was downloaded.';}
+  }catch(e){$('msg').textContent=e.name==='AbortError'?'':'Could not share. Try Download.';}
+};
+$('bDl').onclick=async()=>{
+  $('msg').textContent='Saving…';
+  try{save(await getFile(true));$('msg').textContent='Saved as a GIF. Look in your Gallery or Files > Downloads.';}
+  catch(e){$('msg').textContent='Download failed. Check your internet.';}
+};
+
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+
+/* Install button */
+let dp=null;
+const standalone=matchMedia('(display-mode: standalone)').matches||navigator.standalone;
+const ios=/iphone|ipad|ipod/i.test(navigator.userAgent);
+if(!standalone&&ios)$('inst').hidden=false;
+addEventListener('beforeinstallprompt',e=>{e.preventDefault();dp=e;if(!standalone)$('inst').hidden=false;});
+addEventListener('appinstalled',()=>{$('inst').hidden=true;dp=null;});
+$('inst').onclick=async()=>{
+  if(dp){dp.prompt();await dp.userChoice;dp=null;$('inst').hidden=true;}
+  else if(ios)alert('On iPhone: tap the Share button, then Add to Home Screen.');
+  else alert('Tap the ⋮ menu in your browser, then Install app or Add to Home screen.');
+};
+
+/* Loading page: stays at least 1.8s, then fades once the first stickers are in */
+Promise.all([load(true),new Promise(r=>setTimeout(r,1800))]).then(()=>{
+  $('splash').classList.add('out');
+  setTimeout(()=>$('splash').remove(),600);
+});
+</script>
+</body>
+</html>
